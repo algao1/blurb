@@ -13,8 +13,7 @@ The database and code snippets are written in Go, and the source code can be fou
 
 For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** which exists strictly in memory, and **SSTables** which exists strictly on disk. The memtables are kept in the first layer of the tree, sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
-<!-- TODO: insert diagram of lsm tree. -->
-![LSM Tree](/lsm_tree.png)
+![LSM Tree](/blurb/lsm_tree.png)
 
 This setup allows all our writes to be sequential (which is really fast!), and have decent read speeds.
 
