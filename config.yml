@@ -1,4 +1,4 @@
-baseURL: "blurb"
+baseURL: "//algao1.github.io/blurb"
 title: "blurb"
 paginate: 5
 theme: PaperMod
