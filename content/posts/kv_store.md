@@ -31,6 +31,17 @@ type LSMTree struct {
 
 Writes (or inserts) to the database are appended directly to the newest memtable, and once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only.
 
+A memtable is just an interface, and any structure ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) that implements finding/inserting a key-value pair (kv-pair) and listing all kv-pairs in order, is sufficient.
+
+```go
+// lsm_tree.go
+type Memtable interface {
+    Find(key string) ([]byte, bool)
+    Insert(key string, val []byte)
+    Traverse(f func(k string, v []byte))
+}
+```
+
 ```go
 // lsm_tree.go
 func (lt *LSMTree) Put(key string, val []byte) {
@@ -44,24 +55,13 @@ func (lt *LSMTree) Put(key string, val []byte) {
 }
 ```
 
-A memtable is just an interface, and any structure ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) that implements finding/inserting a key-value pair (kv-pair) and listing all kv-pairs in order is sufficient.
-
-```go
-// lsm_tree.go
-type Memtable interface {
-    Find(key string) ([]byte, bool)
-    Insert(key string, val []byte)
-    Traverse(f func(k string, v []byte))
-}
-```
-
 If the number of memtables exceeds a given threshold, then it is persisted to disk as a SSTable. This can be done in many different ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk.
 
 ### Persisting Memtables
 
 We persist our memtable into a SSTable, which is just a subset of key-value pairs (those from the memtable) in *some* sorted order. Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
 
-For our purposes, since we want to support variable-lengthed keys, we'll first encode the length of the key (which is a fixed to 8 bytes), and then the actual key.
+For our purposes, since we want to support variable-lengthed keys, we'll first encode the length of the key (which is fixed to 8 bytes), and then the actual key.
 
 ```go
 // data_file.go
@@ -82,7 +82,7 @@ func flushBytes(file *os.File, b []byte) (int, error) {
 
 > Note: Error handling is omitted for brevity, unless necessary. Please see source code for the complete implementation.
 
-Similarly, we do this with our values, and end up with the following format. As an exercise, we can also add a checksum (CRC) before the key-value pair to help detect corrupted entries.
+Similarly, we do this with our values, and end up with the following format. As a follow up, we can also add a checksum (CRC) before the key-value pair to help detect if the entry is corrupted.
 
 ```go
 +-----+------------+-----+--------------+-------+
@@ -107,7 +107,7 @@ type SSTable struct {
 }
 ```
 
-Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We traverse our memtable, persisting each key-value pair by flushing both to file. Once we are done, we append our new SSTable to the first (and latest) layer of tables.
+Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We traverse over keys in our memtable, persisting each key-value pair by flushing both to file. Once we are done, we then append our new SSTable to the first (and latest) layer of tables.
 
 ```go
 // sst_manager.go
@@ -138,7 +138,7 @@ func (sm *SSTManager) Add(mt Memtable) error {
 
 ### Deletes
 
-To maintain throughput, deletes are implemented using writes. Instead of actually deleting anything, we'll insert a special type of key-value pair, known as a **tombstone**. This tombstone marks that an entry has been deleted.
+We can implement deletes using writes. Instead of actually deleting anything, we'll instead insert a special type of key-value pair, known as a **tombstone**. The tombstone marks that an entry has been deleted, for our purposes, we'll use `nil`.
 
 ```go
 // lsm_tree.go
@@ -185,7 +185,7 @@ func (sm *SSTManager) Find(key string) ([]byte, error) {
 }
 ```
 
-Finding/determining whether a kv-pair exists in a SSTable involves iterating over *all* entries stored, which is good enough for our current implementation.
+Finding and determining whether a kv-pair exists in a SSTable involves iterating over **all** entries stored, which is sufficient for our current implementation. Each time we read a kv-pair, we must also increment the file offset.
 
 ```go
 // sst_manager.go
@@ -208,7 +208,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-To read a kv-pair from file, we perform a similar operation to `flushBytes` which we saw earlier. We first read in the length of the key/value, then using that, we read the key/value into memory.
+To read a kv-pair from file, we perform a similar operation to `flushBytes` which we saw earlier. We first read in the length of the key or value, then using that, we read the key or value into memory.
 
 ```go
 // data_file.go
@@ -216,9 +216,9 @@ func readBytes(file io.ReaderAt, offset int64) ([]byte, error) {
     lb := make([]byte, 8)
     file.ReadAt(lb, offset)
 
-    l, _ := binary.Varint(lb)
+    length, _ := binary.Varint(lb)
 
-    b := make([]byte, l)
+    b := make([]byte, length)
     file.ReadAt(b, offset+8)
 
     return b, nil
@@ -240,13 +240,13 @@ func readKeyValue(file io.ReaderAt, offset int64) (keyValue, int64, error) {
 
 And done! Now, we've got ourself a rudimentary, but working key-value store.
 
-But, it's pretty clear that this is wildly inefficient once we have more than a few tables stored on disk, and we need to iterate over all entries in each one. Luckily, there's a few optimizations we can make to improve the lookup speed.
+But, it's pretty clear that this is wildly inefficient once we have more than a few tables stored on disk, since we need to iterate over all entries in each one. Luckily, there's a few optimizations we can make to improve the lookup speed.
 
 ## Optimizations
 
 ### Sparse Indexes
 
-One optimization we can make, is to reduce the number of entries we look through for each SSTable. Since entries in our table are already in sorted order, we can maintain a **sparse index** of entries (which denote an interval). And when we need to find an entry, we first perform a binary search to determine which interval to look in.
+One optimization we can make, is to reduce the number of entries we look through for each SSTable. Since entries in our table are already in sorted order, we can maintain a **sparse index** of entries (which denote an interval). And when we need to find an entry, we first perform a binary search to determine which interval to look in, and look *only* in that interval.
 
 We will need to change how search is performed by setting the offsets to exactly the interval found.
 
@@ -266,7 +266,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-We also need to create the sparse index when persisting memtables to disk.
+We also need to create the sparse index when persisting memtables to disk. Here, the `sparseness` controls how large our intervals will be, and smaller values trade better performance for larger overhead.
 
 ```go
 // sst_manager.go
@@ -293,17 +293,17 @@ func (sm *SSTManager) Add(mt Memtable) error {
 }
 ```
 
-Here I'm omitting the details of how the sparse index is implemented, but it is just a wrapper around a slice of {key, offset}, with a method that performs binary search to find the lower and upper bounds.
+Here I'm omitting the details of how the sparse index is implemented, but it is just a wrapper around a slice of `(key, offset)`, with a method that performs binary search to find the lower and upper bounds.
 
 ### Bloom Filters
 
-Apart from reducing the interval of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine if our key resides in the table. However, that would take at least as much space as there are keys, so clearly that would not be feasible.
+Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine if our key resides in the table. However, that would take at least as much space as there are keys, so clearly that would not be feasible.
 
 But, we can do something almost as good. We can determine with *some probability* whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I referenced.
 
-The property that we want is that if it returns false, then we are *guaranteed* that our key does not exist in the table. But, if its true, then it *might* be in the table.
+The property that we want is that if the filter returns false, then we are *guaranteed* that our key does not exist in the table. But, if its true, then it *might* be in the table. 
 
-But similarly to the previous optimization, we need to update `Add` and `findInSSTable`. First, we will just return `False` if the key does not exist in the bloom filter.
+Similarly to the previous optimization, we need to update `Add` and `findInSSTable`. First, we will just return `False` if the key does not exist in the bloom filter.
 
 ```go
 // sst_manager.go
@@ -318,7 +318,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-And let's add the key to the set while we persist the table!
+And let's not forget to add the key to the set while we persist the table!
 
 ```go
 // sst_manager.go
@@ -448,7 +448,7 @@ For our implementation, we will have the user manually invoke compaction. But th
 
 ## Concurrency
 
-So all the code up to this point have been presented with the assumption that there is a single caller. But what if we want to support concurrent operations? Apart from using `sync.RWMutex`, there's a few small things to watch out for.
+So all the code up to this point have been presented with the assumption that there is a single caller. But what if we want to support concurrent operations? Apart from using `sync.RWMutex` in the necessary areas, there's a few small things to watch out for.
 
 We want to be able to perform operations even while memtables are being flushed to disk, and while compactions are happening. Thankfully, because nonactive memtables are immutable and read-only, we only need to acquire the mutex before and after flushing, and not during.
 
@@ -480,7 +480,7 @@ func (lt *LSMTree) flushPeriodically() {
 }
 ```
 
-For reads, we only acquire locks while reading memtables. This way, reads can be blocked at the `SSTManager`, while not blocking subsequent reads and writes (to memtables).
+For reads, we only acquire locks while reading memtables. This way, reads to SSTables can be blocked at the `SSTManager`, while not blocking subsequent reads and writes (to memtables).
 
 ```go
 // lsm_tree.go
