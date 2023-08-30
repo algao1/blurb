@@ -57,11 +57,11 @@ func (lt *LSMTree) Put(key string, val []byte) {
 }
 ```
 
-If the number of memtables exceeds a given threshold, then it is persisted to disk as a SSTable. This can be done in many different ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk.
+If the number of memtables exceeds a given threshold, then it is persisted to disk as a SSTable. This can be done in many different ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk (not shown above, but you can check out source).
 
 ### Persisting Memtables
 
-We persist our memtable into a SSTable, which is just a subset of key-value pairs (those from the memtable) in *some* sorted order. Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
+We persist our memtable into a SSTable, which is just a subset of key-value pairs (those from the memtable) in *some* sorted order (hence the name, *sorted strings table*). Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
 
 For our purposes, since we want to support variable-lengthed keys, we'll first encode the length of the key (which is fixed to 8 bytes), and then the actual key.
 
@@ -71,28 +71,32 @@ func flushBytes(file *os.File, b []byte) (int, error) {
     lb := make([]byte, 8)
     binary.PutVarint(lb, int64(len(b)))
 
-    total := 0
+    // Write the length of the key/value.
+    bytes_written := 0
     n, _ := file.Write(lb)
-    total += n
+    bytes_written += n
 
+    // Write the key/value.
     n, _ = file.Write(b)
-    total += n
+    bytes_written += n
 
-    return total, nil
+    return bytes_written, nil
 }
 ```
 
 > Note: Error handling is omitted for brevity, unless necessary. Please see source code for the complete implementation.
 
-Similarly, we do this with our values, and end up with the following format. As a follow up, we can also add a checksum (CRC) before the key-value pair to help detect if the entry is corrupted.
+Similarly, we do this with our values, and we end up with the following format for our entries.
 
 ```go
-+-----+------------+-----+--------------+-------+
-| CRC | Key Length | Key | Value Length | Value |
-+-----+------------+-----+--------------+-------+
++----------------+------------+-----+--------------+-------+
+| CRC (Optional) | Key Length | Key | Value Length | Value |
++----------------+------------+-----+--------------+-------+
 ```
 
-Now, returning to the `SSTManager` struct seen earlier, this component will be responsible for all our SSTable-related operations.
+> As a follow up, we can also add a checksum (CRC) before the key-value pair to help detect if the entry is corrupted.
+
+Now, returning to the `SSTManager` struct seen earlier, this component will be responsible for handling all our SSTable-related operations.
 
 ```go
 // sst_manager.go
@@ -109,7 +113,7 @@ type SSTable struct {
 }
 ```
 
-Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We traverse over keys in our memtable, persisting each key-value pair by flushing both to file. Once we are done, we then append our new SSTable to the first (and latest) layer of tables.
+Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We first traverse over keys in our memtable, persisting each key-value pair by flushing both to file. Once we are done, we then append our new SSTable to the first (and latest) layer of tables.
 
 ```go
 // sst_manager.go
@@ -128,7 +132,6 @@ func (sm *SSTManager) Add(mt Memtable) error {
 
     // Re-open for read-only.
     dataFile, _ = os.Open(dataPath)
-
     sm.ssTables[0] = append(sm.ssTables[0], SSTable{
         ID:       curCounter,
         DataFile: dataFile,
@@ -140,7 +143,7 @@ func (sm *SSTManager) Add(mt Memtable) error {
 
 ### Deletes
 
-We can implement deletes using writes. Instead of actually deleting anything, we'll instead insert a special type of key-value pair, known as a **tombstone**. The tombstone marks that an entry has been deleted, for our purposes, we'll use `nil`.
+We can implement deletes using writes. Instead of actually deleting anything, we'll instead insert a special type of key-value pair, known as a **tombstone**. The tombstone marks that an entry has been deleted, and for our purposes we'll use the `nil` value.
 
 ```go
 // lsm_tree.go
@@ -149,9 +152,11 @@ func (lt *LSMTree) Delete(key string) {
 }
 ```
 
+We do this because it is easy to implement, and because removing it from our memtable usually requires rebalancing or some other overhead (depending on the implementation).
+
 ## Reads
 
-Getting a kv-pair from our database is relatively simple, we just need to find the **latest** copy of an entry. We iterate over each memtable in reverse chronological order until we find the entry, or repeat the procedure with the SSTables.
+Getting a kv-pair from our database is relatively simple, we just need to find the **latest** copy of an entry (remember that we never delete anything!). We iterate over each memtable in reverse chronological order until we find the entry, or repeat the procedure with the SSTables.
 
 ```go
 // lsm_tree.go
@@ -173,10 +178,7 @@ func (lt *LSMTree) Get(key string) ([]byte, error) {
 func (sm *SSTManager) Find(key string) ([]byte, error) {
     for _, level := range sm.ssTables {
         for _, ss := range level {
-            b, found, err := findInSSTable(ss, key)
-            if err != nil {
-                return nil, fmt.Errorf("unable to search in SSTables: %w", err)
-            }
+            b, found, _ := findInSSTable(ss, key)
             if found {
                 return b, nil
             }
@@ -187,7 +189,7 @@ func (sm *SSTManager) Find(key string) ([]byte, error) {
 }
 ```
 
-Finding and determining whether a kv-pair exists in a SSTable involves iterating over **all** entries stored, which is sufficient for our current implementation. Each time we read a kv-pair, we must also increment the file offset.
+Finding and determining whether a kv-pair exists in a SSTable involves iterating over **all** entries stored, which is sufficient for our current implementation. Each time we read a kv-pair, we must also update the file offset.
 
 ```go
 // sst_manager.go
