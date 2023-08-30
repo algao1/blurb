@@ -11,11 +11,13 @@ The database and code snippets are written in Go, and the source code can be fou
 
 ## Log Structured Merge Tree
 
-For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** which exists strictly in memory, and **SSTables** which exists strictly on disk. The memtables are kept in the first layer of the tree, sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
+For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** (an in-memory data structure that stores key-value pairs) which exists strictly in memory, and **SSTables** (sorted strings tables, which we'll explore later) which exists strictly on disk. 
+
+The memtables are kept in the first layer of the tree, sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
 ![LSM Tree](/blurb/img/lsm_tree.png)
 
-This setup allows all our writes to be sequential (which is really fast!), and have decent read speeds.
+This setup allows all our writes to be sequential since we're always writing to the latest table (which is really fast!), and have decent read speeds.
 
 ```go
 // lsm_tree.go
@@ -29,7 +31,7 @@ type LSMTree struct {
 
 ## Writes
 
-Writes (or inserts) to the database are appended directly to the newest memtable, and once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only.
+Writes (or inserts) to the database are appended directly to the newest memtable, and once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only (we'll see why later).
 
 A memtable is just an interface, and any structure ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) that implements finding/inserting a key-value pair (kv-pair) and listing all kv-pairs in order, is sufficient.
 
