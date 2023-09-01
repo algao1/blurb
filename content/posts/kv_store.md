@@ -5,7 +5,7 @@ author: "agao"
 ShowToc: true
 ---
 
-A few months ago I was inspired [this post](https://artem.krylysov.com/blog/2023/04/19/how-rocksdb-works/) on how RocksDB works and also [DDIA](https://dataintensive.net/), and decided that it would be a fun exercise to implement a database myself. This post is more of a documentation of how I built my own key-value store, but I still hope to give an overview of how they work, and provide enough details for someone to implement one themselves. 
+A few months ago I was inspired [this post](https://artem.krylysov.com/blog/2023/04/19/how-rocksdb-works/) on how RocksDB works, and decided that it would be a fun exercise to implement a database myself. This post is more of a documentation of how I built my own key-value store, but I still hope to give an overview of how they work, and provide enough details for someone to implement one themselves. 
 
 The database and code snippets are written in Go, and the source code can be found [here](https://github.com/algao1/crumbs/tree/master/dbs/lsm).
 
@@ -13,11 +13,11 @@ The database and code snippets are written in Go, and the source code can be fou
 
 For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** (an in-memory data structure that stores key-value pairs) which exists strictly in memory, and **SSTables** (sorted strings tables, which we'll explore later) which exists strictly on disk. 
 
-The memtables are kept in the first layer of the tree, sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
+The memtables are kept in the first layer of the tree, and sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
 ![LSM Tree](/blurb/img/lsm_tree.png)
 
-This setup allows all our writes to be sequential since we're always writing to the latest table (which is really fast!), and have decent read speeds.
+This setup allows our writes to be sequential since we can just write to the latest table, and append new ones as they fill up (which makes it fast!).
 
 ```go
 // lsm_tree.go
@@ -31,7 +31,7 @@ type LSMTree struct {
 
 ## Writes
 
-Writes (or inserts) to the database are appended directly to the newest memtable, and once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only (we'll see why later).
+Like mentioned above, writes (or inserts) to the database are appended directly to the newest **memtable**. Once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only (we'll see why later).
 
 A memtable is just an interface, and any structure ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) that implements finding/inserting a key-value pair (kv-pair) and listing all kv-pairs in order, is sufficient.
 
@@ -57,13 +57,13 @@ func (lt *LSMTree) Put(key string, val []byte) {
 }
 ```
 
-If the number of memtables exceeds a given threshold, then it is persisted to disk as a SSTable. This can be done in many different ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk (not shown above, but you can check out source).
+If the number of memtables exceeds a given threshold, then we want to persist that to disk as a SSTable. This can be done in several ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk (not shown above, but you can check it out [here](https://github.com/algao1/crumbs/blob/7b623c503e7ea02ac3c43887fbeb28ab54b56a21/dbs/lsm/lsm_tree.go#L137-L168)).
 
 ### Persisting Memtables
 
-We persist our memtable into a SSTable, which is just a subset of key-value pairs (those from the memtable) in *some* sorted order (hence the name, *sorted strings table*). Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
+We persist our memtable into a **SSTable**, which is just a subset of key-value pairs (those from the memtable) in *some* sorted order (hence the name, *sorted strings table*). Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
 
-For our purposes, since we want to support variable-lengthed keys, we'll first encode the length of the key (which is fixed to 8 bytes), and then the actual key.
+For our purposes, we want to support variable-lengthed keys, so we'll first encode the length of the key (which is fixed to 8 bytes), and then the actual key.
 
 ```go
 // data_file.go
@@ -84,9 +84,9 @@ func flushBytes(file *os.File, b []byte) (int, error) {
 }
 ```
 
-> Note: Error handling is omitted for brevity, unless necessary. Please see source code for the complete implementation.
+> Note: Error handling is omitted for brevity, unless necessary. Please see source for the complete implementation.
 
-Similarly, we do this with our values, and we end up with the following format for our entries.
+Similarly, we do this with our values, and we end up with the following format for our key-value entries.
 
 ```go
 +----------------+------------+-----+--------------+-------+
@@ -94,9 +94,9 @@ Similarly, we do this with our values, and we end up with the following format f
 +----------------+------------+-----+--------------+-------+
 ```
 
-> As a follow up, we can also add a checksum (CRC) before the key-value pair to help detect if the entry is corrupted.
+> (Optional): As a follow up, we can also add a checksum (CRC) before the key-value pair to help detect if the entry is corrupted.
 
-Now, returning to the `SSTManager` struct seen earlier, this component will be responsible for handling all our SSTable-related operations.
+Now, returning to the `SSTManager` struct seen earlier, this component is responsible for handling all our SSTable-related operations.
 
 ```go
 // sst_manager.go
@@ -113,7 +113,7 @@ type SSTable struct {
 }
 ```
 
-Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We first traverse over keys in our memtable, persisting each key-value pair by flushing both to file. Once we are done, we then append our new SSTable to the first (and latest) layer of tables.
+Let's take a look at the code for adding a SSTable, which shouldn't be too much of a surprise. We first traverse over keys in our memtable, persisting each key-value pair by flushing both to file. Once we are done, we append our new SSTable to the first (and newest) layer of tables.
 
 ```go
 // sst_manager.go
@@ -143,7 +143,7 @@ func (sm *SSTManager) Add(mt Memtable) error {
 
 ### Deletes
 
-We can implement deletes using writes. Instead of actually deleting anything, we'll instead insert a special type of key-value pair, known as a **tombstone**. The tombstone marks that an entry has been deleted, and for our purposes we'll use the `nil` value.
+We can implement deletes using writes. Instead of actually deleting anything, we'll instead insert a special type of key-value pair, known as a **tombstone**. A tombstone marks that an entry has been deleted, and for our purposes we'll use the `nil` value.
 
 ```go
 // lsm_tree.go
@@ -152,11 +152,11 @@ func (lt *LSMTree) Delete(key string) {
 }
 ```
 
-We do this because it is easy to implement, and because removing it from our memtable usually requires rebalancing or some other overhead (depending on the implementation).
+We do this because 1. it is easy to implement, and 2. because removing it from our memtable usually requires rebalancing or some other overhead (depending on the implementation).
 
 ## Reads
 
-Getting a kv-pair from our database is relatively simple, we just need to find the **latest** copy of an entry (remember that we never delete anything!). We iterate over each memtable in reverse chronological order until we find the entry, or repeat the procedure with the SSTables.
+Getting a kv-pair from our database is relatively simple, we just need to find the **latest** copy of an entry (remember that we never delete/update old copies once persisted!). We iterate over each memtable in reverse chronological order until we find the entry, or repeat the procedure with the SSTables.
 
 ```go
 // lsm_tree.go
@@ -197,14 +197,14 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
     maxOffset = ss.FileSize
 
     for offset < maxOffset {
-        kvp, newOffset, err := readKeyValue(ss.DataFile, int64(offset))
+        keyValPair, newOffset, err := readKeyValue(ss.DataFile, int64(offset))
         if err != nil {
             return nil, false, fmt.Errorf("unable to find in SSTable: %w", err)
         }
         offset = int(newOffset)
 
-        if key == string(kvp.key) {
-            return kvp.value, true, nil
+        if key == string(keyValPair.key) {
+            return keyValPair.value, true, nil
         }
     }
 
@@ -212,7 +212,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-To read a kv-pair from file, we perform a similar operation to `flushBytes` which we saw earlier. We first read in the length of the key or value, then using that, we read the key or value into memory.
+To read a kv-pair from file, we perform `readBytes` similar operation to `flushBytes` which we saw earlier. We first read in the length of the key or value, then using that, we read the key or value into memory.
 
 ```go
 // data_file.go
@@ -270,7 +270,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-We also need to create the sparse index when persisting memtables to disk. Here, the `sparseness` controls how large our intervals will be, and smaller values trade better performance for larger overhead.
+We also need to create the sparse index when persisting memtables to disk. Here, the `sparseness` parameter controls how large our intervals will be, and smaller values trade better performance for larger overhead.
 
 ```go
 // sst_manager.go
@@ -297,15 +297,15 @@ func (sm *SSTManager) Add(mt Memtable) error {
 }
 ```
 
-Here I'm omitting the details of how the sparse index is implemented, but it is just a wrapper around a slice of `(key, offset)`, with a method that performs binary search to find the lower and upper bounds.
+Here I'm omitting the details of how the sparse index is implemented, but it is essentially a wrapper around a slice of `(key, offset)`, with a method that performs binary search to find the appropriate lower and upper bounds.
 
 ### Bloom Filters
 
-Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine if our key resides in the table. However, that would take at least as much space as there are keys, so clearly that would not be feasible.
+Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine whether our key resides in the table. However, that would take at least as much space as there are keys, so clearly that would not be feasible.
 
-But, we can do something almost as good. We can determine with *some probability* whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I referenced.
+But, we can do something almost as good. We can determine with *some probability* whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I used for my implementation.
 
-The property that we want is that if the filter returns false, then we are *guaranteed* that our key does not exist in the table. But, if its true, then it *might* be in the table. 
+The property that we want is that if the filter returns false, then we are *guaranteed* that our key does not exist in the table. But, if its true, then it *might* exist in the table. 
 
 Similarly to the previous optimization, we need to update `Add` and `findInSSTable`. First, we will just return `False` if the key does not exist in the bloom filter.
 
@@ -363,7 +363,7 @@ But first, why compaction? Well, recall from earlier when we implemented deletio
 
 Another reason (which is cited in the paper), is that it is generally faster to perform a lookup on a larger table than over multiple tables.
 
-For the scope of this post, we'll discuss the details of how multiple tables are compacted into one.
+For the scope of this post, we'll discuss the details of how multiple tables are compacted into one. Below is the core logic for compacting tables:
 
 ```go
 // sst_manager.go
@@ -371,6 +371,7 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
     kfh := make(KeyFileHeap, len(tables))
     level := tables[0].Meta.Level
 
+    // Initialize the start of each table into heap.
     for i, t := range tables {
         kvp, offset, _ := readKeyValue(t.DataFile, 0)
         kfh[i] = KeyFile{
@@ -392,6 +393,9 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
     iter := 0
     prevKeyFile := KeyFile{}
 
+    // While our heap is not empty, we have entries to iterate.
+    // For each iteration, if it is different than the previous
+    // entry and not a tombstone, flush the old entry.
     for len(kfh) > 0 {
         keyFile := heap.Pop(&kfh).(KeyFile)
 
@@ -430,7 +434,7 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
         })
     }
 
-    // We need to remember to do the last one.
+    // We need to remember to flush the last one.
     kl, _ := flushBytes(dataFile, []byte(prevKeyFile.Key))
     vl, _ := flushBytes(dataFile, prevKeyFile.Value)
     bf.Add([]byte(prevKeyFile.Key))
@@ -440,7 +444,7 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
 }
 ```
 
-The above looks like a handful, but it is not all that different than what we did earlier in `Add`. Since each table is already sorted, we can use a min heap to advance over all tables at once while preserving order. Though not shown here, but the heap also uses chronological ordering to break ties so that earlier entries are processed first.
+It looks like a handful, but it is not all that different than what we did earlier in `Add`. Since each table is already sorted, we can use a *min heap* to advance over all tables at once while preserving order. Though not shown here, but the heap also uses chronological ordering to break ties so that earlier entries are processed first.
 
 We keep track of the previous `keyFile` element and only flush it to the compacted table once its key is different than the current `keyFile` and if it is not a tombstone. The rest is the exact same as before, append to the sparse index, and add it to the bloom filter. Now, after each iteration, we add the next key-value entry from the same file back into the heap so we can repeat the process.
 
@@ -448,7 +452,7 @@ And at the end, we need to remember to flush the last key-value pair.
 
 ### Triggers
 
-For our implementation, we will have the user manually invoke compaction. But this can also be done in more automated ways, such as when the number of tombstones exceed a certain threshold, or if tables are below a certain usage.
+For our implementation, we will have the user manually invoke compaction. But this can also be done in more automated ways, such as when the number of tombstones exceed a certain threshold, or if a table is below a certain usage.
 
 ## Concurrency
 
@@ -506,6 +510,8 @@ func (lt *LSMTree) Get(key string) ([]byte, error) {
 ## Remarks
 
 Hopefully you enjoyed reading this as much as I did building it! I'm hoping to expand on this project in the near future by making a distributed kv-store, but that's still quite far away.
+
+One thing I've omitted from this blog is the [write ahead log](https://en.wikipedia.org/wiki/Write-ahead_logging) (WAL) which is used for crash recovery. I felt like it somewhat detracted from the main ideas of how a database worked, and didn't have quite as much time to implement it from scratch.
 
 ### Notes
 
