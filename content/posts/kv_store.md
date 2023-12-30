@@ -17,7 +17,7 @@ The memtables are kept in the first layer of the tree, and sorted in chronologic
 
 ![LSM Tree](/blurb/img/lsm_tree.png)
 
-This setup allows our writes to be sequential since we can just write to the latest table, and append new ones as the old ones fill up (which makes this fast!).
+This setup allows us to write sequentially to memory (which is very fast) by writing to the latest memtable, and appending new ones as they fill up. We can then persist from memory to disk in the background in batches, which is more performant.
 
 ```go
 // lsm_tree.go
@@ -33,7 +33,7 @@ type LSMTree struct {
 
 Like mentioned above, writes (or inserts) to the database are appended directly to the newest **memtable**. Once that memtable reaches a certain threshold, it is rotated out for a new one. Every memtable except the latest one is immutable and read-only (we'll see why shortly).
 
-A memtable is just an interface, and any structure that implements finding/inserting a key-value pair ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) and listing all kv-pairs in order, is sufficient.
+A memtable is just an interface, and any in-memory structure that implements finding/inserting a key-value pair ([AA tree](https://user.it.uu.se/~arnea/ps/simp.pdf), red-black tree, skiplist, etc.) and listing all kv-pairs in order, is sufficient.
 
 ```go
 // lsm_tree.go
@@ -57,7 +57,7 @@ func (lt *LSMTree) Put(key string, val []byte) {
 }
 ```
 
-If the number of memtables exceeds a given threshold, then we want to persist that to disk as a SSTable. This can be done in several ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk (not shown above, but you can check it out [here](https://github.com/algao1/crumbs/blob/7b623c503e7ea02ac3c43887fbeb28ab54b56a21/dbs/lsm/lsm_tree.go#L137-L168)).
+If the number of memtables exceeds a given threshold, then we want to persist that to disk as a **SSTable**. This can be done in several ways, but for simplicity, I've opted to have a background process that periodically flushes extra tables to disk (not shown above, but you can check it out [here](https://github.com/algao1/crumbs/blob/7b623c503e7ea02ac3c43887fbeb28ab54b56a21/dbs/lsm/lsm_tree.go#L137-L168)).
 
 ### Persisting Memtables
 
@@ -84,7 +84,7 @@ func flushBytes(file *os.File, b []byte) (int, error) {
 }
 ```
 
-> Note: Error handling is omitted for brevity, unless necessary. Please see source for the complete implementation.
+> Note: Error handling is omitted for brevity. Please see source for the complete implementation.
 
 Similarly, we do this with our values, and we end up with the following format for our key-value entries.
 
@@ -156,7 +156,7 @@ We do this because **1.** it is easy to implement, and **2.** because removing a
 
 ## Reads
 
-Getting a kv-pair from our database is relatively simple, we just need to find the **latest** copy of an entry (remember that we never delete/update old copies once persisted!). We iterate over each memtable in reverse chronological order until we find the entry. Otherwise, we repeat the same procedure with the SSTables.
+Getting a kv-pair from our database is also pretty simple, we just need to find the **latest** copy of an entry (remember that we never delete/update old copies once persisted!). We iterate over each memtable in reverse chronological order until we find the entry. Otherwise, we repeat the same procedure with the SSTables.
 
 ```go
 // lsm_tree.go
@@ -189,7 +189,7 @@ func (sm *SSTManager) Find(key string) ([]byte, error) {
 }
 ```
 
-Finding and determining whether a kv-pair exists in a SSTable involves iterating over **all** entries stored, which will be sufficient for our current implementation. We do this by loading the entire file into a buffer, and then reading from it one pair at a time.
+Finding and determining whether a kv-pair exists in a SSTable involves iterating over **all** entries stored, which will be sufficient for the current implementation. We do this by loading the entire file into a buffer (we'll see how to improve this soon!), and then reading from it one pair at a time.
 
 ```go
 // sst_manager.go
@@ -245,9 +245,9 @@ func readKeyValue(file io.ReaderAt) (keyValue, int64, error) {
 }
 ```
 
-And done! Now, we've got ourself a rudimentary, but working key-value store.
+And it's done! Now, we've got ourself a rudimentary, but working key-value store.
 
-However, it's pretty clear that this is wildly inefficient once we have more than a few tables stored on disk, since we need to iterate over all entries in each one. Luckily, there's a few optimizations that we can make to improve the lookup speed.
+However, it's pretty clear that this is quite inefficient once we have more than a few tables stored on disk, since we need to iterate over all entries in each one. Luckily, there's a few optimizations that we can make to improve the lookup speed.
 
 ## Optimizations
 
@@ -279,7 +279,7 @@ func findInSSTable(ss SSTable, key string) ([]byte, bool, error) {
 }
 ```
 
-We also need to create the sparse index when persisting memtables to disk. Here, the `sparseness` parameter controls how large our intervals will be, and smaller values trade better performance for larger overhead (up until a certain point, then it actually gets slower due to making syscalls to read chunks).
+We also need to create the sparse index when persisting memtables to disk. Here, the `sparseness` parameter controls how large our intervals will be, and smaller values trade better performance for larger overhead.
 
 ```go
 // sst_manager.go
@@ -295,9 +295,11 @@ func (sm *SSTManager) Add(mt Memtable) error {
         vn, _ := flushBytes(dataFile, v)
 
         // Here!!
+        // ------------------------------------------------
         if iter%sm.sparseness == 0 {
             si.Append(recordOffset{Key: k, Offset: offset})
         }
+        // ------------------------------------------------
 
         offset += kn + vn
         iter++
@@ -311,7 +313,7 @@ Here I'm omitting the details of how the sparse index is implemented, but it is 
 
 ### Bloom Filters
 
-Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine whether our key resides in the table. However, that would usually take at least as much space as there are keys, so clearly that would not be feasible.
+Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine whether our key resides in the table. However, that would generally take at least as much space as there are keys, so clearly that would not be feasible.
 
 But, we can do something almost as good. We can determine with *some probability* whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I used for my implementation.
 
