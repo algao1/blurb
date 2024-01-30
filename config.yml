@@ -31,7 +31,7 @@ params:
   ShowPostNavLinks: true
   ShowBreadCrumbs: true
   ShowCodeCopyButtons: false
-  # ShowWordCount: true
+  ShowWordCount: true
   ShowRssButtonInSectionTermList: true
   UseHugoToc: true
   disableSpecial1stPost: false
@@ -74,15 +74,15 @@ params:
   # home-info mode
   homeInfoParams:
     Title: "blurb"
-    Content: "Bits and pieces about programming."
+    Content: "Random bits and pieces about programming."
 
-  # socialIcons:
+  socialIcons:
     # - name: twitter
     #   url: "https://twitter.com/"
     # - name: stackoverflow
     #   url: "https://stackoverflow.com"
-    # - name: github
-    #   url: "https://github.com/"
+    - name: github
+      url: "https://github.com/algao1"
 
   analytics:
     google:
@@ -114,18 +114,18 @@ params:
     keys: ["title", "permalink", "summary", "content"]
 menu:
   # main:
-    # - identifier: categories
-    #   name: categories
-    #   url: /categories/
-    #   weight: 10
-    # - identifier: tags
-    #   name: tags
-    #   url: /tags/
-    #   weight: 20
-    # - identifier: example
-    #   name: example.org
-    #   url: https://example.org
-    #   weight: 30
+  # - identifier: categories
+  #   name: categories
+  #   url: /categories/
+  #   weight: 10
+  # - identifier: tags
+  #   name: tags
+  #   url: /tags/
+  #   weight: 20
+  # - identifier: example
+  #   name: example.org
+  #   url: https://example.org
+  #   weight: 30
 # Read: https://github.com/adityatelange/hugo-PaperMod/wiki/FAQs#using-hugos-syntax-highlighter-chroma
 pygmentsUseClasses: true
 markup:
