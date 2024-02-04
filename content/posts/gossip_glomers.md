@@ -5,11 +5,11 @@ author: "agao"
 ShowToc: true
 ---
 
-As with most things nowadays, I found [this](https://news.ycombinator.com/item?id=34897723) on HackerNews one day and bookmarked it somewhere in my list of TODO activities. I recently wanted to take a short break from working through some _other_ distributed systems course, so I decided to take the time and try this out myself.
+As with most things nowadays, I found [this](https://news.ycombinator.com/item?id=34897723) on HackerNews one day and bookmarked it somewhere in my list of TODO activities. I recently wanted to take a short break from working through [MIT's](https://pdos.csail.mit.edu/6.824/) distributed systems course, so I decided to take the time and try this out myself.
 
-Gossip Glomers is a series of distributed systems challenges from [Fly.io](https://fly.io/dist-sys/) along with [Kyle Kingsbury](https://aphyr.com/about). The challenge is meant to be language agnostic, but my implementation is in Go and the source code can be found [here](https://github.com/algao1/gossip-glomers).
+Gossip Glomers is a series of distributed systems challenges from [Fly.io](https://fly.io/dist-sys/) and [Kyle Kingsbury](https://aphyr.com/about). The challenge is meant to be language agnostic, but my implementation is in Go and the source code can be found [here](https://github.com/algao1/gossip-glomers).
 
-I'll just be highlighting a few of the interesting tidbits from the challenges. As always, spoilers below.
+I'll just be highlighting a few of the interesting tidbits from the challenges. And as always, spoilers below.
 
 ## Challenge 3: Broadcast
 
@@ -23,9 +23,9 @@ For this challenge, we need to implement a broadcast system that gossips message
 
 The simplest approach here as mentioned would be to send a node's entire data on every message, however this is not practical in the real-world given that a message can be arbitrarily large.
 
-Instead, we can send the message to a separate channel, which acts like a queue (one for each neighbour to broadcast), and batch them. This way we avoid having to send all messages at once, and reduces the number of messages we have to send.
+Instead, for each node, we can send the message to a separate channel, which acts like a queue (one for each neighbour to broadcast), and batch them. This way we avoid having to send all messages at once, and reduces the number of messages we have to send.
 
-We do need to take care to not gossip/rebroadcast any messages we've already seen to prevent an explosion of requests.
+However, we do need to take care to not gossip/rebroadcast any messages we've already seen to prevent an explosion of requests.
 
 ```go
 // Only gossip if we haven't seen the message before.
@@ -36,7 +36,7 @@ if _, ok := s.messages[m]; !ok {
 }
 ```
 
-Here we batch and send the messages after a certain amount of time has passed, this is to ensure that messages are delivered on time and it doesn't get stale. We can also add the option to batch and send after we've reached a certain number of messages, to keep the size of messages small.
+Here we batch and send the messages after a certain amount of time has passed, this is to ensure that messages are delivered on time and doesn't get stale. We can also add the option to batch and send after we've reached a certain number of messages, to keep the size of messages small.
 
 ```go
 // Inside a separate goroutine to batch and send message.

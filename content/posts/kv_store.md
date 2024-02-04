@@ -5,13 +5,15 @@ author: "agao"
 ShowToc: true
 ---
 
-A few months ago I was inspired by [this post](https://artem.krylysov.com/blog/2023/04/19/how-rocksdb-works/) on how RocksDB works, and decided that it would be a fun exercise to implement a database myself. This post is more of a documentation of how I built my own key-value store, but I still hope to give an overview of how they work, and provide enough details for someone to implement one themselves. 
+A few months ago I was inspired by [this post](https://artem.krylysov.com/blog/2023/04/19/how-rocksdb-works/) on how RocksDB works, and decided that it would be a fun exercise to implement a database myself.
+
+This post is more of a documentation of how I built my own key-value store, but I still hope to give an overview of how they work, and provide enough details for someone to implement one themselves.
 
 The database and code snippets are written in Go, and the source code can be found [here](https://github.com/algao1/crumbs/tree/master/dbs/lsm).
 
 ## Log Structured Merge Tree
 
-For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** (an in-memory data structure that stores key-value pairs) which exists in memory, and **SSTables** (sorted strings tables, which we'll explore later) which exists strictly on disk. 
+For our implementation, we'll be using a log structured merge tree (or LSM tree). It is a data structure that is comprised of two other data structures, **memtables** (an in-memory data structure that stores key-value pairs) which exists in memory, and **SSTables** (sorted strings tables, which we'll explore later) which exists strictly on disk.
 
 The memtables are kept in the first layer of the tree, and sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
@@ -27,7 +29,6 @@ type LSMTree struct {
     // ...
 }
 ```
-
 
 ## Writes
 
@@ -61,7 +62,7 @@ If the number of memtables exceeds a given threshold, then we want to persist th
 
 ### Persisting Memtables
 
-We persist our memtable into a **SSTable**, which is just a subset of key-value pairs (those from the memtable) in a **sorted order** (hence the name, *sorted strings table*). Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
+We persist our memtable into a **SSTable**, which is just a subset of key-value pairs (those from the memtable) in a **sorted order** (hence the name, _sorted strings table_). Since it is stored on disk, we need to encode it in a format that is compact, and easy to retrieve.
 
 For our purposes, we want to support variable-lengthed keys, so we'll first encode the length of the key (which is fixed to 8 bytes), and then the actual key.
 
@@ -221,7 +222,7 @@ To read a kv-pair from the buffer, we need to read both using `readElement`, whi
 func readElement(reader io.Reader) ([]byte, int, error) {
     lengthBytes := make([]byte, 8)
     reader.Read(lengthBytes)
-    
+
     length, _ := binary.Varint(lb)
 
     b := make([]byte, length)
@@ -315,9 +316,9 @@ Here I'm omitting the details of how the sparse index is implemented, but it is 
 
 Apart from reducing the number of records our key-value store needs to look at, we can also completely ignore some tables **if** we can determine whether our key resides in the table. However, that would generally take at least as much space as there are keys, so clearly that would not be feasible.
 
-But, we can do something almost as good. We can determine with *some probability* whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I used for my implementation.
+But, we can do something almost as good. We can determine with _some probability_ whether our key exists in a given set (and hence our table)! This is done using a **bloom filter**, a probabilistic data structure. I won't go into the details of implementing one or how it works, but feel free to check out [this](https://llimllib.github.io/bloomfilter-tutorial/) article I used for my implementation.
 
-The property that we want is that if the filter returns false, then we are *guaranteed* that our key does not exist in the table. But, if its true, then it *might* exist in the table. 
+The property that we want is that if the filter returns false, then we are _guaranteed_ that our key does not exist in the table. But, if its true, then it _might_ exist in the table.
 
 Similarly to the previous optimization, we need to update `Add` and `findInSSTable`. First, we will just return `False` if the key does not exist in the bloom filter.
 
@@ -371,7 +372,7 @@ Now it should be much better!
 
 ## Compaction
 
-I'd like to first preface that compaction is a *very complicated* topic, and would require an entire post to explain all the various intricacies, and frankly one beyond my limited understanding. But, here is a very well written [paper](https://arxiv.org/pdf/2202.04522.pdf) that goes into detail on all the different aspects and considerations.
+I'd like to first preface that compaction is a _very complicated_ topic, and would require an entire post to explain all the various intricacies, and frankly one beyond my limited understanding. But, here is a very well written [paper](https://arxiv.org/pdf/2202.04522.pdf) that goes into detail on all the different aspects and considerations.
 
 But first, why compaction? Well, recall from earlier when we implemented deletions using writes and tombstones. That creates a lot of "wasted" space in tables as more entries are deleted, so we would like to have some way to collect and "compact" older entries to free up space.
 
@@ -393,7 +394,7 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
             Key:     string(kvp.key),
             Value:   kvp.value,
             // NOTE: this file does not represent the FileID.
-            FileIdx: i, 
+            FileIdx: i,
             Reader:  buf,
         }
         totalItems += t.Meta.Items
@@ -456,7 +457,7 @@ func (sm *SSTManager) compactTables(newID int, tables []SSTable) SSTable {
 }
 ```
 
-It looks like a handful, but it is not all that different than what we did earlier in `Add`. Since each table is already sorted, we can use a *minheap* to advance over all tables at once while preserving order. Though not shown here, but the heap also uses chronological ordering to break ties so that earlier entries are processed first.
+It looks like a handful, but it is not all that different than what we did earlier in `Add`. Since each table is already sorted, we can use a _minheap_ to advance over all tables at once while preserving order. Though not shown here, but the heap also uses chronological ordering to break ties so that earlier entries are processed first.
 
 We keep track of the previous `keyFile` element and only flush it to the compacted table once its key is different than the current `keyFile` and if it is not a tombstone. This prevents us from adding duplicate and deleted entries.
 
@@ -464,7 +465,7 @@ The rest is the exact same as before, we append to the sparse index, and add it 
 
 ### Triggers
 
-For our implementation, we will have the user manually invoke compaction. But this can also be done in more automated ways, such as when the number of tombstones exceed a certain threshold, if a table is below a certain usage, or if the number of tables in a level exceeds a threshold. 
+For our implementation, we will have the user manually invoke compaction. But this can also be done in more automated ways, such as when the number of tombstones exceed a certain threshold, if a table is below a certain usage, or if the number of tables in a level exceeds a threshold.
 
 ## Remarks
 
@@ -474,3 +475,4 @@ One thing I've omitted from this blog is the [write ahead log](https://en.wikipe
 
 - For the sake of clarity, I also did not include any of the finer details on encoding and decoding files, sparses indexes or bloom filters, but they are included in the source.
 - If you're interested in other kv-store architectures, be sure to check out [Bitcask](https://riak.com/assets/bitcask-intro.pdf). The entire paper is only 6 pages long, and very easy to implement.
+- You might also be interesed in a more comprehensive guide on LSMs, you can check out [Mini-LSM](https://skyzh.github.io/mini-lsm/00-preface.html) which is written in Rust.
