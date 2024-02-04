@@ -76,13 +76,13 @@ params:
     Title: "blurb"
     Content: "Random bits and pieces about programming."
 
-  socialIcons:
-    # - name: twitter
-    #   url: "https://twitter.com/"
-    # - name: stackoverflow
-    #   url: "https://stackoverflow.com"
-    - name: github
-      url: "https://github.com/algao1"
+  # socialIcons:
+  # - name: twitter
+  #   url: "https://twitter.com/"
+  # - name: stackoverflow
+  #   url: "https://stackoverflow.com"
+  # - name: github
+  #   url: "https://github.com/algao1"
 
   analytics:
     google:

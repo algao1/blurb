@@ -88,7 +88,7 @@ for {
 
 ## Challenge 5: Kafka-Style Log
 
-Here we implement a replicated log service similar to Kafka, it supports the following operations:
+Here we implement a replicated log service similar to Kafka, and it has to support the following operations:
 
 - `send` sends a message to be appended
 - `poll` returns a set of logs starting from the provided offset
@@ -97,14 +97,14 @@ Here we implement a replicated log service similar to Kafka, it supports the fol
 
 ### Challenge 5b: Multi-Node Kafka-Style Log
 
-There's two ways I thought about tackling this problem:
+There's two ways I've thought about tackling this problem:
 
 1. The cluster runs leaderless, and we shard the logs amongst the nodes.
 2. One node is assigned to be leader and all other nodes are followers and relay their requests to the leader.
 
 I went with the first option since the challenge hinted at using a linearizable kv-store, but the second option more closely aligns with how Kafka looks like in reality.
 
-#### Leaderless
+#### Option 1: Leaderless
 
 Each node is responsible (or owns) a subset of the logs, and we determine the owner by hashing the keys. When a node receives a write request for a key it doesn't own, it relays the request to the node that owns it.
 
@@ -122,9 +122,9 @@ func (s *server) getOwner(key string) string {
 
 ![kafka_leaderless](/blurb/img/kafka_leaderless.png)
 
-We write our logs and committed offsets to share kv-stores so that read requests (`poll` or `list_committed_offsets`) can read from store if it doesn't own the key, or directly from memory otherwise.
+We write our logs and committed offsets to shared kv-stores so that read requests (`poll` or `list_committed_offsets`) can read from the store even if it doesn't own the key, or directly from memory otherwise.
 
-#### Leader
+#### Option 2: Forward to Leader
 
 In this case, we select one node to be the leader, and that node is solely responsible for executing all the commands. All other nodes are followers and relay both read and write requests to the leader.
 
