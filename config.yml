@@ -8,11 +8,15 @@ buildDrafts: false
 buildFuture: false
 buildExpired: false
 
-googleAnalytics: UA-123-45
-
 minify:
   disableXML: true
   minifyOutput: true
+
+outputs:
+  home:
+    - html
+    - rss
+    - json
 
 params:
   env: production # to enable google analytics, opengraph, twitter-cards and schema.
@@ -30,9 +34,10 @@ params:
   # ShowShareButtons: true
   ShowPostNavLinks: true
   ShowBreadCrumbs: true
-  ShowCodeCopyButtons: false
+  ShowCodeCopyButtons: true
   ShowWordCount: true
   ShowRssButtonInSectionTermList: true
+  ShowFullTextinRSS: true
   UseHugoToc: true
   disableSpecial1stPost: false
   disableScrollToTop: false
@@ -76,7 +81,9 @@ params:
     Title: "blurb"
     Content: "Random bits and pieces about programming."
 
-  # socialIcons:
+  socialIcons:
+    - name: "rss"
+      url: "/blurb/index.xml"
   # - name: twitter
   #   url: "https://twitter.com/"
   # - name: stackoverflow
@@ -84,13 +91,13 @@ params:
   # - name: github
   #   url: "https://github.com/algao1"
 
-  analytics:
-    google:
-      SiteVerificationTag: "XYZabc"
-    bing:
-      SiteVerificationTag: "XYZabc"
-    yandex:
-      SiteVerificationTag: "XYZabc"
+  # analytics:
+  #   google:
+  #     SiteVerificationTag: "XYZabc"
+  #   bing:
+  #     SiteVerificationTag: "XYZabc"
+  #   yandex:
+  #     SiteVerificationTag: "XYZabc"
 
   cover:
     hidden: true # hide everywhere but not in structured data
