@@ -9,7 +9,7 @@ As with most things nowadays, I found [this](https://news.ycombinator.com/item?i
 
 Gossip Glomers is a series of distributed systems challenges from [Fly.io](https://fly.io/dist-sys/) and [Kyle Kingsbury](https://aphyr.com/about). The challenge is meant to be language agnostic, but my implementation is in Go and the source code can be found [here](https://github.com/algao1/gossip-glomers).
 
-I'll just be highlighting a few of the interesting tidbits from the challenges. And as always, spoilers below.
+I'll just be highlighting a few of the interesting tidbits from the challenges. And as always, **spoilers below**.
 
 ## Challenge 3: Broadcast
 
@@ -23,7 +23,7 @@ For this challenge, we need to implement a broadcast system that gossips message
 
 The simplest approach here as mentioned would be to send a node's entire data on every message, however this is not practical in the real-world given that a message can be arbitrarily large.
 
-Instead, for each node, we can send the message to a separate channel, which acts like a queue (one for each neighbour to broadcast), and batch them. This way we avoid having to send all messages at once, and reduces the number of messages we have to send.
+Instead, for each node, we can send the message to a separate channel, which acts like a queue (one for each peer to broadcast), and batch them. This way we avoid having to send all messages at once, and reduces the number of messages we have to send.
 
 However, we do need to take care to not gossip/rebroadcast any messages we've already seen to prevent an explosion of requests.
 
@@ -40,14 +40,14 @@ Here we batch and send the messages after a certain amount of time has passed, t
 
 ```go
 // Inside a separate goroutine to batch and send message.
-// We have one for each neighbour n.
+// We have one for each peer n.
 buffer := make([]int, 0)
 ticker := time.NewTicker(time.Duration(150) * time.Millisecond)
 for {
     select {
     case <-ticker.C:
         // ...
-        // n is the neighbour we're sending the msg to
+        // n is the peer we're sending the msg to.
         s.node.Send(n, msg)
     case m := <-nChan:
         buffer = append(buffer, m)
@@ -57,7 +57,7 @@ for {
 
 ### Challenge 3c: Fault-Tolerant Broadcast
 
-To make it fault-tolerant, we only need to make one small addition to our previous solution, and that is to add a retry to our `s.node.Send`. If we don't receive a message back within a certain timeframe, we can requeue all the messages and try again later.
+To make it fault-tolerant, we only need to make one small addition to our previous solution, and that is to add retry logic to our `s.node.Send`. If we don't receive a message back within a certain timeframe, we can requeue all the messages and try again later.
 
 ```go
 // Inside a separate goroutine to batch and send message.
