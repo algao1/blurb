@@ -33,9 +33,9 @@ To begin, there are three states a Raft node can be in: Follower, Candidate, and
 ```go
 type RaftState int
 const (
-	Follower RaftState = iota
-	Candidate
-	Leader
+  Follower RaftState = iota
+  Candidate
+  Leader
 )
 ```
 
@@ -43,12 +43,12 @@ Each state has some associated work that needs to be done periodically, and I've
 
 ```go
 func (rf *Raft) ticker() {
-	for !rf.killed() {
-		rf.mu.Lock()
-		rf.tickFunc()
-		rf.mu.Unlock()
-		time.Sleep(time.Duration(10) * time.Millisecond)
-	}
+  for !rf.killed() {
+    rf.mu.Lock()
+    rf.tickFunc()
+    rf.mu.Unlock()
+    time.Sleep(time.Duration(10) * time.Millisecond)
+  }
 }
 ```
 
@@ -62,22 +62,22 @@ Otherwise, the follower will trigger an election and becomes a candidate. When a
 
 ```go
 func (rf *Raft) tickFollower() {
-	if !rf.killed() && time.Since(rf.lastElectionEvent) > rf.electionTimeout() {
-		rf.becomeCandidate()
-	}
+  if !rf.killed() && time.Since(rf.lastElectionEvent) > rf.electionTimeout() {
+    rf.becomeCandidate()
+  }
 }
 
 func (rf *Raft) becomeCandidate() {
-	rf.currentState = Candidate
-	rf.currentTerm++
-	rf.votedFor = rf.me
-	rf.lastElectionEvent = time.Now()
-	rf.tickFunc = rf.tickCandidate
-	go func() {
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
-		rf.candidateRequestVotes()
-	}()
+  rf.currentState = Candidate
+  rf.currentTerm++
+  rf.votedFor = rf.me
+  rf.lastElectionEvent = time.Now()
+  rf.tickFunc = rf.tickCandidate
+  go func() {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+    rf.candidateRequestVotes()
+  }()
 }
 ```
 
@@ -122,37 +122,37 @@ Lastly, once a node becomes a leader, it must actively assert and maintain leade
 
 ```go
 func (rf *Raft) leaderAppendEntries() {
-	rf.lastHeartbeatEvent = time.Now()
-	savedCurrentTerm := rf.currentTerm
+  rf.lastHeartbeatEvent = time.Now()
+  savedCurrentTerm := rf.currentTerm
 
-	for peerId := range rf.peers {
-		if peerId == rf.me {
-			continue
-		}
-		go func(peerId int) {
-			args := AppendEntriesArgs{
-				Term:     savedCurrentTerm,
-				LeaderId: rf.me,
-			}
-			var reply AppendEntriesReply
-			if !rf.sendAppendEntries(peerId, &args, &reply) {
-				return
-			}
+  for peerId := range rf.peers {
+    if peerId == rf.me {
+      continue
+    }
+    go func(peerId int) {
+      args := AppendEntriesArgs{
+        Term:     savedCurrentTerm,
+        LeaderId: rf.me,
+      }
+      var reply AppendEntriesReply
+      if !rf.sendAppendEntries(peerId, &args, &reply) {
+        return
+      }
 
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
+      rf.mu.Lock()
+      defer rf.mu.Unlock()
 
-			if rf.currentState != Leader {
-				rf.dlog("... while waiting for AppendEntries reply, changed state=%v", rf.currentState)
-				return
-			}
+      if rf.currentState != Leader {
+        rf.dlog("... while waiting for AppendEntries reply, changed state=%v", rf.currentState)
+        return
+      }
 
-			if reply.Term > savedCurrentTerm {
-				rf.dlog("... skipping AppendEntries reply since term out of date")
-				rf.becomeFollower(reply.Term)
-			}
-		}(peerId)
-	}
+      if reply.Term > savedCurrentTerm {
+        rf.dlog("... skipping AppendEntries reply since term out of date")
+        rf.becomeFollower(reply.Term)
+      }
+    }(peerId)
+  }
 }
 ```
 
@@ -161,3 +161,7 @@ _The two receiver implementations for `RequestVote` and `AppendEntries` can be f
 **Another thing** to be wary of here is the timing of leader elections and heartbeat events. The paper recommends that heartbeat timeouts should be an order of magnitude smaller than election timeouts, so that leaders can reliably send heartbeats to prevent followers from starting elections.
 
 The testing harness limits us to tens of heartbeats per second, so we need to pick a reasonable election timeout to match. Personally, I've found timeouts of `100ms` and `300 + [0, 300)ms` to work.
+
+## Part B: Log Replication
+
+WIP.
