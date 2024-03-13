@@ -79,7 +79,7 @@ params:
   # home-info mode
   homeInfoParams:
     Title: "blurb"
-    Content: "Random bits and pieces about programming."
+    Content: "Random bits and pieces about programming, distributed systems, and whatnot."
 
   socialIcons:
     - name: "rss"

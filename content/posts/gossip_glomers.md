@@ -86,6 +86,10 @@ for {
 }
 ```
 
+## Challenge 4: Grow-Only Counter
+
+In this challenge, we implement a stateless, grow-only counter using a _sequentially consistent_ key-value store. To do this, we make generous use of the atomic [**compare-and-swap**](https://en.wikipedia.org/wiki/Compare-and-swap) operation.
+
 ## Challenge 5: Kafka-Style Log
 
 Here we implement a replicated log service similar to Kafka, and it has to support the following operations:
