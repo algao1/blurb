@@ -23,7 +23,6 @@ params:
   title: "blurb"
   description: "blurb"
   keywords: [Blog, Portfolio, PaperMod]
-  author: Me
   # author: ["Me", "You"] # multiple authors
   # images: ["<link or path of image for opengraph, twitter-cards>"]
   DateFormat: "January 2, 2006"
@@ -79,17 +78,17 @@ params:
   # home-info mode
   homeInfoParams:
     Title: "blurb"
-    Content: "Random bits and pieces about programming, distributed systems, and whatnot."
+    Content: "Random bits and pieces about programming."
 
   socialIcons:
+    - name: github
+      url: "https://github.com/algao1"
     - name: "rss"
       url: "/blurb/index.xml"
   # - name: twitter
   #   url: "https://twitter.com/"
   # - name: stackoverflow
   #   url: "https://stackoverflow.com"
-  # - name: github
-  #   url: "https://github.com/algao1"
 
   # analytics:
   #   google:
@@ -120,11 +119,14 @@ params:
     minMatchCharLength: 0
     keys: ["title", "permalink", "summary", "content"]
 menu:
-  # main:
-  # - identifier: categories
-  #   name: categories
-  #   url: /categories/
-  #   weight: 10
+  main:
+    - identifier: about
+      name: about
+      url: /about
+      weight: 50
+    - identifier: archives
+      name: archives
+      url: /archives
   # - identifier: tags
   #   name: tags
   #   url: /tags/
