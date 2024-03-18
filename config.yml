@@ -127,6 +127,7 @@ menu:
     - identifier: archives
       name: archives
       url: /archives
+      weight: 50
   # - identifier: tags
   #   name: tags
   #   url: /tags/
