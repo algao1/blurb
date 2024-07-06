@@ -1,5 +1,5 @@
 ---
-title: "Challenging Gossip Glomers"
+title: "Gossip Glomers"
 date: 2024-01-28
 author: "agao"
 ShowToc: true

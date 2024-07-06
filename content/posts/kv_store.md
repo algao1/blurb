@@ -1,5 +1,5 @@
 ---
-title: "Implementing a Key-Value Store From Scratch"
+title: "Writing a Key-Value Store From Scratch"
 date: 2023-08-23
 author: "agao"
 ShowToc: true

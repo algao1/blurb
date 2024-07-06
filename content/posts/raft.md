@@ -1,5 +1,5 @@
 ---
-title: "Implementing Raft: Simple but Not Easy"
+title: "Raft: Simple but Not Easy"
 date: 2024-02-08
 author: "agao"
 ShowToc: true
