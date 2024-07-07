@@ -30,11 +30,52 @@ type Event struct {
     T    time.Time
     Task Task
 }
+
+type Timer struct {
+    CurTime   time.Time // Simulated time.
+    Scheduler *TaskScheduler
+    Events    EventPriority
+}
+
+func (t *Timer) Execute() {
+    if len(t.Events) == 0 {
+        return
+    }
+    e := heap.Pop(&t.Events).(*Event)
+    t.Scheduler.Schedule(e.Task)
+    t.CurTime = e.T
+}
 ```
 
-In a more complete system, this would allow us to outright ignore things like `time.Sleep` and network latency, and ultimately speed up our simulation. For my first implementation, I didn't include this, but it shouldn't be too much work to add this (as we'll see later).
+And each time we execute a task, we advance the Timer's simulated time forward to the current time. In a more complete system, this would allow us to outright ignore things like `time.Sleep` and network latency, and ultimately speed up our simulation. For my first implementation, I didn't include this, but it shouldn't be too much work to add this (as we'll see later).
 
 Lastly, the **scheduler** is a LIRO (last-in-random-out) queue holding the current list of **runnable** tasks. Using a LIRO queue allows us to execute tasks in a random fashion, so that each run would be different from another.
+
+```go
+type TaskScheduler struct {
+    Tasks     *list.List
+    Generator *Generator
+    executed  map[string]int
+}
+
+func (s *TaskScheduler) Execute() {
+    if s.Tasks.Len() == 0 {
+        return
+    }
+    shifts := s.Generator.Rand() % (s.Tasks.Len())
+    cur := s.Tasks.Front()
+    for range shifts {
+        cur = cur.Next()
+    }
+
+    task := s.Tasks.Remove(cur).(Task)
+    s.executed[task.Name]++
+
+    if task.Callback() {
+        s.Tasks.PushBack(task)
+    }
+}
+```
 
 > Similar to Go's Goroutine scheduler, we consider three states:
 >
@@ -50,8 +91,6 @@ Before delving deeper into the implementation, let's take a look at a very simpl
 func main() {
     slog.SetLogLoggerLevel(slog.LevelDebug)
     sim := dst.NewSimulator(42)
-    // Equivalent to spawning 16 threads/goroutines
-    // and printing "Hello World" on each.
     for range 16 {
         PrintHelloWorld(sim)
     }
@@ -84,9 +123,7 @@ However, our first results are quite boring since the simulator is not able to p
 
 There's really no good way of adding preemption without hacking the language itself, or by using more complex methods like what Hermit and Antithesis does. So instead, I've chosen to use **coroutines** to accomplish something similar in effect.
 
-Coroutines allows a task `T` to suspend execution and _yield_ back to our simulator's scheduler and be inserted into the runnable queue again. When it is executed again, the scheduler will _resume_ `T`.
-
-So, by manually inserting a `yield` in between the print statements, we can achieve a preemption-like effect.
+Coroutines allows a task `T` to suspend execution and _yield_ back to our simulator's scheduler and be inserted into the runnable queue again. When it is executed again, the scheduler will _resume_ `T`. So, by manually inserting a `yield` in between the print statements, we can achieve a preemption-like effect.
 
 ```go
 func PrintHelloWorld(sim *dst.Simulator) {
@@ -118,11 +155,11 @@ go run dst/cmd/main.go > dst/out2.txt
 diff dst/out1.txt dst/out2.txt
 ```
 
-However, to actually implement this is a bit messy. We must make all our tasks (`fn`) accept a yield function in the form `func(yield func())` so that the task can preempt itself.
+However, to actually implement this is a bit messy. We must make all our tasks (functions) accept a yield function in the form `func(yield func())` so that the task can preempt itself.
 
 The `resume` function wraps around the `yield` function, but only executes it with some probability `P` (`P=0.3` in this case). This is yet again to simulate more randomness in execution order (the task is run immediately after), although we can similarly do this by inserting to the front of the LIRO queue.
 
-Lastly, since the scheduler needs to know if a task is to be reinserted after executing, we wrap our `resume` with a `func bool`, and use that as our task.
+Lastly, since the scheduler needs to know if a task needs to be reinserted after executing, we wrap our `resume` with a `func bool`, and use that as our task.
 
 ```go
 func (s *Simulator) Spawn(fn func(yield func())) {
@@ -154,9 +191,32 @@ The coroutine package is the one outlined in Russ Cox's [blog](https://research.
 
 > The `coro` implementation uses goroutines and channels under the hood, but you can ensure that only one process is used by setting `GOMAXPROCS` to 1.
 
+Using the debug stats, we can see that indeed some functions have been preempted and reinserted back into the runnable queue.
+
+```
+============== DEBUG STATS ==============
+func main.PrintHelloWorld_0 executed 2 times
+func main.PrintHelloWorld_1 executed 1 times
+func main.PrintHelloWorld_10 executed 2 times
+func main.PrintHelloWorld_11 executed 3 times
+func main.PrintHelloWorld_12 executed 1 times
+func main.PrintHelloWorld_13 executed 1 times
+func main.PrintHelloWorld_14 executed 2 times
+func main.PrintHelloWorld_15 executed 2 times
+func main.PrintHelloWorld_2 executed 2 times
+func main.PrintHelloWorld_3 executed 2 times
+func main.PrintHelloWorld_4 executed 1 times
+func main.PrintHelloWorld_5 executed 1 times
+func main.PrintHelloWorld_6 executed 2 times
+func main.PrintHelloWorld_7 executed 2 times
+func main.PrintHelloWorld_8 executed 2 times
+func main.PrintHelloWorld_9 executed 1 times
+============== DEBUG STATS ==============
+```
+
 ## Limitations
 
-However, this approach is not without limitations. For one, doing it on the application level means that the user has to manually adjust their program in order to be simulated. This includes
+However, this approach is not without limitations. For one, doing it on the application level is very intrusive as the user has to manually adjust their program in order to be simulated. This includes
 
 - Manually inserting yields to achieve preemption
 - Wrapping concurrent function calls in `sim.Spawn`
