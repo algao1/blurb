@@ -20,7 +20,7 @@ permissions:
 # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Default to bash
 defaults:
@@ -50,6 +50,10 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Install Node.js dependencies
         run: "[[ -f package-lock.json || -f npm-shrinkwrap.json ]] && npm ci || true"
+      - name: Get theme
+        run: git submodule update --init --recursive
+      - name: Update theme to latest commit
+        run: git submodule update --remote --merge
       - name: Build with Hugo
         env:
           # For maximum backward compatibility with Hugo modules
@@ -58,7 +62,7 @@ jobs:
         run: |
           hugo \
             --gc \
-            --minify \
+            --buildDrafts \
             --baseURL "${{ steps.pages.outputs.base_url }}/"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
