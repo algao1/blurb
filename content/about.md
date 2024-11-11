@@ -4,6 +4,6 @@ summary: "about"
 ShowWordCount: false
 ---
 
-Currently finishing my studies in computer science at the **University of Waterloo**. I sometimes like to talk about **distributed systems**.
+Currently Software Engineer at [Datadog](https://www.datadoghq.com/), where I work on high-throughput metric sharding and routing. Previously Computer Science at the **University of Waterloo**.
 
-Previously Software Engineer Intern at [Datadog](https://www.datadoghq.com/), where I worked on high-throughput metric sharding and routing.
+I like to write about **distributed systems**, **databases**, and **software engineering** in general.
