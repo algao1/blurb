@@ -137,7 +137,7 @@ error: mismatched number of fields: 1 != 2
 
 With the `CREATE` and `INSERT` statements implemented, now we just need some way to query our data, and we can do that by implementing the `SELECT` statement.
 
-Let's start with a very simple select statement: getting the `id` and `name` columns from the `users` table.
+Let's start with a very simple select statement -- getting the `id` and `name` columns from the `users` table.
 
 ```
 >> SELECT id, name FROM users;
@@ -150,7 +150,7 @@ Let's start with a very simple select statement: getting the `id` and `name` col
 +-------+----+
 ```
 
-We just need to figure out what columns need to be returned (`id`, `name`), and then iterate over the rows in the table and _selecting_ only those columns. However, what if we want to conditionally select rows? Maybe we only want rows with an `id` equal to 3?
+We just need to figure out what columns need to be returned (`id`, `name`), and then iterate over the rows in the table and _selecting_ only those columns. However, what if we want to conditionally select rows? Maybe we like to only return rows with `id = 3`?
 
 We would need to support a new keyword, the `WHERE` keyword.
 
@@ -165,7 +165,7 @@ We would need to support a new keyword, the `WHERE` keyword.
 
 The `WHERE` filter would need to be able to support arbitrary expressions, and so we need a general mechanism for evaluating an expression for a given row. We will do something similar to a **tree-walk interpreter**, by traversing the SQL abstract syntax tree (AST) and evaluating as we go along, bottom up.
 
-Using the example above, we need to evaluate the expression `id + 2 = 3` against every row, and filter. In the base case, we need to either return the value if the expression is a `SQLVal` or resolve the value and return it for `ColName`.
+Using the example above, we need to evaluate the expression `id + 2 = 3` against every row, and filter. In the base case, we need to either return the value (int, text, etc.) if the expression is a `SQLVal` or resolve the value and return it for `ColName`.
 
 ```go
 func (t *table) evaluateCell(rowIndex int, stmt sqlparser.Expr) (MemoryCell, string, ColumnType, error) {
@@ -187,7 +187,7 @@ func (t *table) evaluateCell(rowIndex int, stmt sqlparser.Expr) (MemoryCell, str
 }
 ```
 
-Now we need to support the infix operation `+` and the infix comparison `=` each within their own helper function. Let's take a look at the infix operation case.
+Now we need to support infix operations like `+` and the infix comparisons like `=` each within their own helper function. Let's take a look at the infix operation case.
 
 ```go
 func (t *table) evaluateInfixOperationCell(rowIndex int, stmt sqlparser.BinaryExpr) (MemoryCell, string, ColumnType, error) {
@@ -222,6 +222,8 @@ func (t *table) evaluateInfixOperationCell(rowIndex int, stmt sqlparser.BinaryEx
 }
 ```
 
-There's nothing really special here other than propagating the column name if either is unknown (happens in the case of colName + val), making sure that the left and right types match, and implementing the actual operation for `TextType` and `IntType`.
+There's nothing really special here other than propagating the column name if either left or right is unknown (which happens in the case of colName + val), making sure that the left and right types match, and implementing the actual `+` operation for `TextType` and `IntType`.
+
+> The same approach applies for supporting keywords like `AND` and `OR`.
 
 But that's about it! I have plans to continue working on and improving this, but don't quite feel like writing it all at the moment.
