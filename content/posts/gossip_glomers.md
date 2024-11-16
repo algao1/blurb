@@ -3,6 +3,7 @@ title: "Gossip Glomers"
 date: 2024-01-28
 author: "agao"
 ShowToc: true
+draft: true
 ---
 
 As with most things nowadays, I found [this](https://news.ycombinator.com/item?id=34897723) on HackerNews one day and bookmarked it somewhere in my list of TODO activities. I recently wanted to take a short break from working through [MIT's](https://pdos.csail.mit.edu/6.824/) distributed systems course, so I decided to take the time and try this out myself.

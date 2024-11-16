@@ -3,6 +3,7 @@ title: "Raft: Simple but Not Easy"
 date: 2024-02-08
 author: "agao"
 ShowToc: true
+draft: true
 ---
 
 This post highlights my weeks long journey of implementing Raft, following from [MIT's 6.5840](https://pdos.csail.mit.edu/6.824/) Distributed Systems course. Specifically, this post covers some of what's required to implement [Lab 3](https://pdos.csail.mit.edu/6.824/labs/lab-raft.html), a distributed consensus algorithm for managing a replicated [log](https://en.wikipedia.org/wiki/Transaction_log).

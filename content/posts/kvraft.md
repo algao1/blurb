@@ -3,6 +3,7 @@ title: "KVRaft: Fault Tolerant Key Value Store Using Raft"
 date: 2024-03-20
 author: "agao"
 ShowToc: true
+draft: true
 ---
 
 This is a follow-up to my [previous post](/blurb/posts/raft) about writing Raft for MIT's 6.5840 (which I still need to finish). For the fourth lab, you need to build a fault-tolernace key/value store using the previous Raft library.
