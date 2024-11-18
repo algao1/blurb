@@ -5,6 +5,8 @@ author: "agao"
 ShowToc: true
 ---
 
+_Note: This post was updated on 2024/11/17 to include support for mutexes._
+
 There is a lot of nondeterminism (or randomness) in modern software, from the obvious like random number generation to the less obvious like syscalls, scheduling and network latency. This makes debugging and troubleshooting very troublesome especially in distributed systems where multiple machines and networks are involved.
 
 However, if we could somehow control this randomness, then this would allow us to reproduce issues at will, no matter how rare or difficult. This blog is heavily inspired by the work done by [Reverie](https://github.com/facebookexperimental/reverie), [Hermit](https://github.com/facebookexperimental/hermit), [sled](https://github.com/spacejam/sled) and [Antithesis](https://antithesis.com/). Do check them out.
@@ -212,6 +214,133 @@ func main.PrintHelloWorld_8 executed 2 times
 func main.PrintHelloWorld_9 executed 1 times
 ============== DEBUG STATS ==============
 ```
+
+## Mutexes
+
+Now that we have the ability to spawn goroutines, we need some way to safely share data between goroutines. Mutexes achieve this by not allowing execution within some critical section if the current thread does not own the lock (or mutex). So the data can only ever be accessed by one process at a given time.
+
+As an example the following code would not generate the correct results without mutexes, since it would be possible for
+
+- goroutine A to increment the counter, then yield control to gorotuine B
+- goroutine B increments the counter, prints, returns and yields to A
+- goroutine A continnues to print the counter, but with an additional increment
+
+```go
+func PrintCounter(sim *dst.Simulator, counter *int) {
+    sim.Spawn(func(yield func()) {
+        // sim.Lock("counter_lock", yield)
+        yield()
+        *counter++
+        yield()
+        fmt.Println(*counter)
+        // sim.Unlock("counter_lock")
+    })
+}
+```
+
+```
+...
+5
+6
+8
+8
+9
+11
+11
+12
+13
+...
+```
+
+Ignoring the poor ergonomics (having to name your locks) of using this for a second, the implementation is quite simple. The simulation only needs to keep track of all held locks and **who** they are held by.
+
+```go
+type TaskScheduler struct {
+    Tasks     *list.List
+    Generator *Generator
+
+    // Internals.
+    curFunc   string
+    heldLocks map[string]string
+    executed  map[string]int
+}
+
+func (s *TaskScheduler) Lock(lockID string) bool {
+    if _, ok := s.heldLocks[lockID]; ok {
+        return false
+    }
+    s.heldLocks[lockID] = s.curFunc
+    return true
+}
+
+func (s *TaskScheduler) Unlock(lockID string) {
+    delete(s.heldLocks, lockID)
+}
+```
+
+Now, we just need to expose these details to the `Simulator`, and we're done!
+
+> **Q:** In the `Unlock` function, we don't check for the lock's owner before deleting the lock, what are some possible issues with this?
+
+```go
+func (s *Simulator) Lock(lockID string, yield func()) {
+    for !s.Scheduler.Lock(lockID) {
+        yield()
+    }
+}
+
+func (s *Simulator) Unlock(lockID string) {
+    s.Scheduler.Unlock(lockID)
+}
+```
+
+> **Q:** In the `Lock` function there is a for loop checking if whether the current process (gorotuine) can acquire the lock. Why is this required? Can we do with just an if statement?
+
+Let's try running the previous program and see if it works as expected now.
+
+```
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+```
+
+Great! It prints out the numbers 1 through 16 like we expected, and the debug stats also show a lot of preemption which means the simulator is correctly yielding when the running process can't acquire the lock.
+
+```
+============== DEBUG STATS ==============
+func main.PrintCounter_0 executed 4 times
+func main.PrintCounter_1 executed 2 times
+func main.PrintCounter_10 executed 2 times
+func main.PrintCounter_11 executed 1 times
+func main.PrintCounter_12 executed 1 times
+func main.PrintCounter_13 executed 2 times
+func main.PrintCounter_14 executed 1 times
+func main.PrintCounter_15 executed 2 times
+func main.PrintCounter_2 executed 2 times
+func main.PrintCounter_3 executed 3 times
+func main.PrintCounter_4 executed 2 times
+func main.PrintCounter_5 executed 8 times
+func main.PrintCounter_6 executed 2 times
+func main.PrintCounter_7 executed 2 times
+func main.PrintCounter_8 executed 1 times
+func main.PrintCounter_9 executed 1 times
+============== DEBUG STATS ==============
+```
+
+With this done, we should be able to simulate most simple concurrent programs.
 
 ## Limitations
 
