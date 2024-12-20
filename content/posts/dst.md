@@ -51,7 +51,7 @@ func (t *Timer) Execute() {
 
 Each time we execute a task, we advance the `Timer`'s simulated time forward to the current time. In a more complete system, this would allow us to outright ignore things like `time.Sleep` and network latency, and ultimately speed up our simulation. For my initial implementation, I didn't include this, but it shouldn't be too much work to add this (as we'll see later).
 
-Lastly, the **scheduler** is a LIRO (last-in-random-out) queue holding the current list of **runnable** tasks. Using a LIRO queue allows us to execute tasks in a random fashion, so that each run would be different from another.
+Lastly, the **scheduler** is a AIAO (any-in-any-out) queue holding the current list of **runnable** tasks. Using a AIAO queue allows us to execute tasks in a random fashion, so that each run would be different from another.
 
 ```go
 type TaskScheduler struct {
