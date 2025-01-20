@@ -5,7 +5,7 @@ author: "agao"
 ShowToc: true
 ---
 
-_Note: This post was updated on 2024/11/17 to include support for mutexes._
+_2024/11/17: Updated on to include support for mutexes._
 
 There is a lot of nondeterminism (or randomness) in modern software, from the obvious like random number generation to the less obvious like syscalls, scheduling and network latency. This makes debugging and troubleshooting very troublesome especially in distributed systems where multiple machines and networks are involved.
 

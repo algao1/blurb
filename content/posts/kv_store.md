@@ -17,7 +17,7 @@ For our implementation, we'll be using a log structured merge tree (or LSM tree)
 
 The memtables are kept in the first layer of the tree, and sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
-![LSM Tree](/blurb/img/lsm_tree.png)
+![LSM Tree](/blurb/img/kv_store/lsm_tree.png)
 
 This setup allows us to write sequentially to memory (which is very fast) by writing to the latest memtable, and appending new ones as they fill up. We can then persist from memory to disk in the background in batches, which is more performant.
 
