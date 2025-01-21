@@ -65,9 +65,18 @@ With profiling enabled, we can see this weird pattern in the CPU profile when we
 
 ![profile](/blurb/img/kv_store/profile1.png)
 
-The most suspicious parts were the `file.Write` and `syscall.Write` stack frames on the top of the flamegraph. And after looking around for a bit, I realized that was because the writer I was using wasn't buffering writes, and was instead performing a syscall each time an entry was written. Yikes.
+The most suspicious parts were the `file.Write` and `syscall.Write` stack frames on the top of the flamegraph to the left. And after looking around for a bit, I realized that was because the writer I was using wasn't buffering writes, and was directly writing to file (and thus performing a syscall) each time an entry was written. Yikes.
 
 One simple change later to use a buffered writer, and we see a large improvement to the compaction speed (a **10.78x** reduction!). We also see a small improvement to the uncompacted read speeds, but I'm not exactly sure what could've caused it.
+
+```go
+dataPath := filepath.Join(sm.dir, fmt.Sprintf("lsm-%d.data", curCounter))
+dataFile, err := os.OpenFile(dataPath, WR_FLAGS, 0644)
+if err != nil {
+	return fmt.Errorf("unable to flush: %w", err)
+}
+bw := bufferedWriter{bufio.NewWriterSize(dataFile, 1024*64)}
+```
 
 ```console
 writing 1,000,000 entries:              432.756532ms
@@ -82,7 +91,7 @@ Nevertheless, onto the next flamegraph!
 
 ![profile](/blurb/img/kv_store/profile2.png)
 
-The next hotspot in the code seems to be coming from our reads, and in particular the `lsm.readChunk` function. This is called to read a segment (chunk) of entries from the data file, so we can iterate over it. There's quite a few `runtime.makeslice` calls which allocate memory (and is expensive), likely coming from `b := make([]byte, size)`.
+The next hotspot in the code seems to be coming from our reads, and in particular the `lsm.readChunk` function. This is called to read a segment (chunk) of entries from the data file, so we can iterate over it. There's quite a few `runtime.makeslice` calls which allocate memory (and is expensive), which tells me it's likely coming from something like `b := make([]byte, size)`.
 
 We want to reduce this if possible, and one common approach to doing this is to use a `sync.Pool` which allows us to reuse allocated memory.
 
@@ -106,6 +115,8 @@ func (sm *SSTManager) findInSSTable(ss SSTable, key string) ([]byte, bool, error
         maxOffset = ss.FileSize
     }
 
+    // Previously, this would just be chunkB := make([]byte, maxOffset - offset)
+
     chunkB := *sm.bytesPool.Get().(*[]byte)
     if cap(chunkB) < maxOffset-offset {
         chunkB = make([]byte, maxOffset-offset)
@@ -119,7 +130,7 @@ func (sm *SSTManager) findInSSTable(ss SSTable, key string) ([]byte, bool, error
 }
 ```
 
-Note that we may have to manually grow the returned byte slice since they are arbitrarily sized (we could get a reused smaller slice, or a brand new one). I also didn't specify a default size for the byte pool since I didn't notice a significant improvement otherwise, but I might need to pick better sizes.
+Note that we may have to manually grow the returned byte slice since they are arbitrarily sized (we could get a reused smaller slice, or a brand new one). There are no such guarantees when using a `sync.Pool`. I also didn't specify a default size for the byte pool since I didn't notice a significant improvement otherwise, but I might need to pick better sizes.
 
 ```console
 writing 1,000,000 entries:              417.357875ms
@@ -217,4 +228,6 @@ compacting:                             1.809599781s
 reading 250,000 entries:                2.243038783s
 ```
 
-I think there likely is still room for further optimization, mostly around reducing memory allocations, improving bloom filter performance (both speed and space, so we can have lower false positive rate), and performance tuning. But, I'm going to call it quits here as I've had enough fun looking at flamegraphs for a weekend.
+I think there likely is still room for further optimization, mostly around reducing memory allocations (looking at the large chunks of `mallocgc` calls), improving bloom filter performance (both speed and space, so we can have lower false positive rate), and performance tuning.
+
+But, I'm going to call it quits here as I've had enough fun looking at flamegraphs for a weekend.
