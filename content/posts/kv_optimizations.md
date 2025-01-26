@@ -11,7 +11,7 @@ Almost two years ago I decided that I wanted to write my own [key-value store](/
 
 _Disclaimer: I'm neither an expert on databases or go profiling, so some of what I say may be completely incorrect._
 
-As a baseline I just wrote a very simple benchmark that would test the write performance, uncompacted read performance, compaction speeds, and read performance. Note that I only ran the benchmark a single time in each case, but you should really run it multiple times for a more fair comparison.
+As a baseline I just wrote a very simple benchmark that would test the write performance, uncompacted read performance, compaction speeds, and read performance.
 
 ```go
 func main() {
@@ -50,7 +50,7 @@ func main() {
 }
 ```
 
-The exact benchmarking code isn't super rigorous, but we can get a baseline of our performance with just that:
+The exact benchmarking code isn't super rigorous, but we can get a baseline of our performance with just that. Note that I only ran the benchmark a single time in each case, but you should really run it multiple times for a more fair comparison.
 
 ```console
 writing 1,000,000 entries:              409.138409ms
@@ -73,7 +73,7 @@ One simple change later to use a buffered writer, and we see a large improvement
 dataPath := filepath.Join(sm.dir, fmt.Sprintf("lsm-%d.data", curCounter))
 dataFile, err := os.OpenFile(dataPath, WR_FLAGS, 0644)
 if err != nil {
-	return fmt.Errorf("unable to flush: %w", err)
+    return fmt.Errorf("unable to flush: %w", err)
 }
 bw := bufferedWriter{bufio.NewWriterSize(dataFile, 1024*64)}
 ```
@@ -130,7 +130,8 @@ func (sm *SSTManager) findInSSTable(ss SSTable, key string) ([]byte, bool, error
 }
 ```
 
-Note that we may have to manually grow the returned byte slice since they are arbitrarily sized (we could get a reused smaller slice, or a brand new one). There are no such guarantees when using a `sync.Pool`. I also didn't specify a default size for the byte pool since I didn't notice a significant improvement otherwise, but I might need to pick better sizes.
+Note that we may have to manually grow the returned byte slice since they are arbitrarily sized (we could get a reused smaller slice, or a brand new one).
+There are no such guarantees when using a `sync.Pool`. I also didn't specify a default size for the byte pool since I didn't notice a significant improvement otherwise, but I might need to pick better sizes.
 
 ```console
 writing 1,000,000 entries:              417.357875ms
@@ -139,13 +140,16 @@ compacting:                             1.727956858s
 reading 250,000 entries:                2.478669755s
 ```
 
-With this optimization, we see a pretty noticable improvement to both uncompacted and compacted reads, with a reduction of 26.4% and 30.2% respectively. Let's see if we can squeeze a little more performance out of this.
+With this optimization, we see a pretty noticable improvement to both uncompacted and compacted reads, with a reduction of 26.4% and 30.2% respectively.
+Let's see if we can squeeze a little more performance out of this.
 
 ## Optimization 3: Shift Entry Layout
 
 ![profile](/blurb/img/kv_store/profile3.png)
 
-There's nothing obvious from the flamegraph that stands out to me, but I know that I should be able to get slightly faster reads if I rearrange the layout of each entry. Currently each entry looks like this:
+The DB also seems to be spending a significant amount of time checking whether an entry exists against the bloom filter.
+But before tackling that, there's an easy optimization (slightly faster reads) we can do by rearranging the layout of each entry.
+Currently each entry looks like this:
 
 ```console
 +--------------------+-----+----------------------+-------+
@@ -219,7 +223,7 @@ func readKeyVal(reader io.Reader) (keyValue, int, error) {
 }
 ```
 
-With this, we again see a small improvement to reads performane (6.7% and 10.5% respectively):
+With this, we again see a small improvement to reads performance (6.7% and 10.5% respectively):
 
 ```console
 writing 1,000,000 entries:              406.321054ms
@@ -228,6 +232,70 @@ compacting:                             1.809599781s
 reading 250,000 entries:                2.243038783s
 ```
 
-I think there likely is still room for further optimization, mostly around reducing memory allocations (looking at the large chunks of `mallocgc` calls), improving bloom filter performance (both speed and space, so we can have lower false positive rate), and performance tuning.
+## Optimization 4: Faster Bloom Filters
+
+I was inspired to improve my bloom filter implementation after reading [this very informative blog post](https://save-buffer.github.io/bloom_filter.html).
+I separated out the bloom filters into a separate package and ran a simple benchmark:
+
+```console
+❯ go test -bench=.
+BenchmarkBloomFilterV1-4          442606              2700 ns/op
+PASS
+ok      crumbs/bloom    3.204s
+```
+
+One of the most expensive operations in a bloom filter is computing the _k_ different hash functions. We could improve this by using a fast hash function like `murmur3` or `xxhash`, but it would be far cheaper to just avoid doing all this work.
+
+[This paper](https://www.eecs.harvard.edu/~michaelm/postscripts/rsa2008.pdf) recommends using two hash functions `h1(x)` and `h2(x)` to compute each of the _k_ hashes `g(x) = h1(x) + i * h2(x)`. This would reduce the number of hashes
+we have to compute from _k_ to just 2. But we can do even better by leveraging the lower and upper 32-bits of a 64-bit hash as two separate hashes since they should be random and independent of each other.
+
+```go
+func cheatHash(h uint64, i int) uint32 {
+    return uint32(h) + uint32(i)*uint32(h>>32)
+}
+
+func (bf *BloomFilterV2) Add(b []byte) {
+    h := xxhash.Sum64(b)
+    for i := range bf.K {
+        pos := cheatHash(h, i) % uint32(len(bf.Bitset))
+        bf.Bitset[pos] = true
+    }
+}
+
+func (bf *BloomFilterV2) In(b []byte) bool {
+    h := xxhash.Sum64(b)
+    for i := range bf.K {
+        pos := cheatHash(h, i) % uint32(len(bf.Bitset))
+        if !bf.Bitset[pos] {
+            return false
+        }
+    }
+    return true
+}
+```
+
+Using the new bloom filter, we get nearly a 10x improvement (although my naive implementation was not very good):
+
+```console
+❯ go test -bench=.
+BenchmarkBloomFilterV1-4          446556              2656 ns/op
+BenchmarkBloomFilterV2-4         4409061               272.9 ns/op
+PASS
+ok      crumbs/bloom    3.176s
+```
+
+This translate to a pretty substantial improvement to our performance across the board:
+
+```console
+writing 1,000,000 entries:              395.322549ms
+reading 250,000 entries (uncompacted):  2.148468531s (3.07x)
+compacting:                             1.171958263s (0.54x)
+reading 250,000 entries:                2.18048968s
+```
+
+## Conclusion
+
+I think there likely is still room for further optimization, mostly around reducing memory allocations (looking at the large chunks of `mallocgc` calls),
+improving the filter performance (using a block bloom filter, or cuckoo filter), and using a skiplist.
 
 But, I'm going to call it quits here as I've had enough fun looking at flamegraphs for a weekend.
