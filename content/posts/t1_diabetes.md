@@ -3,6 +3,7 @@ title: "Type 1 Diabetes and Observability"
 date: 2025-02-16
 author: "agao"
 ShowToc: true
+tags: ["observability"]
 ---
 
 [Type 1 diabetes](https://my.clevelandclinic.org/health/diseases/21500-type-1-diabetes) is a life-long autoimmune disease where the body's immune system attacks the pancreas making it incapable of producing insulin -- a hormone needed to process glucose (sugar) for energy. As a result, insulin is required multiples a time by injection, and careful monitoring to prevent glucose levels from going too high or too low -- both of which can be fatal.
@@ -11,7 +12,7 @@ Luckily, with technology we have devices like [continuous glucose monitors](http
 
 I've been using the Dexcom G6 for several years and it works like this: the CGM is installed on either the stomach or the arms, and there's a small thin needle that is inserted under the skin which probes and relays glucose data to your device, and optionally to Dexcom's servers.
 
-![](/blurb/img/t1d/simple_dexcom.png)
+![](/blurb/img/t1d/simple_dexcom.png#center)
 
 However, because I use iOS there's no easy way to export this data in real-time and Dexcom's APIs have a delay (3h outside US, 1h within US) which makes them a non-option. Instead, some folks have figured out [how to get real time](https://github.com/gagebenne/pydexcom) Dexcom CGM sensor data using an auxiliary service called Dexcom Share which is used to share data with caretakers and clinics.
 
@@ -21,7 +22,7 @@ However, because I use iOS there's no easy way to export this data in real-time 
 
 As a side project, I decided to port over the functionality from Python to Go and add some of my own flair. Ichor was a Discord bot that would display observations and other statistics from the past 12h and forecast up to 6h ahead using a LSTM model that I trained. To do this, it would render a PNG locally with the observations and predictions, and send it over a private message.
 
-![](/blurb/img/t1d/daily_overlay.png)
+![](/blurb/img/t1d/daily_overlay.png#center)
 
 You could also register insulin injections and carbohydrate intake, and these would be rendered and taken into account in the forecast.
 
@@ -35,7 +36,7 @@ Everything was deployed using Docker and managed with Docker Compose. The Discor
 
 After a year or so, for some reason (that I can't remember anymore), I decided to rewrite the project with a different database (MongoDB). It supported a "real-time" dashboard-esque experience by using a dedicated channel and constantly sending and removing snapshots, and also custom alerts for hyper- and hypo-glycemia (high and low blood sugar).
 
-![](/blurb/img/t1d/iv2_daily_overlay.png)
+![](/blurb/img/t1d/iv2_daily_overlay.png#center)
 
 This solution worked well for a while, but it had a few problems:
 
@@ -65,11 +66,11 @@ The solution I settled on recently was to relay the glucose data to Datadog as m
 
 Since I already use Datadog in my day to day work, I was already very familiar with the query system and how to use it to get the visualizations I need. Although you could very likely also do this with other tools like Prometheus and Loki.
 
-![](/blurb/img/t1d/dd_iv3_dashboard.png)
+![](/blurb/img/t1d/dd_iv3_dashboard.png#center)
 
 The second point however, was probably the deciding factor. Datadog's iOS app supports widgets, which allows me to add various components to my phone's homescreen (such as graphs). This has drastically improved the experience since it just takes a swipe to see all my metrics at a glance. Having it be readily available forces me to look at it more often, and stay on course.
 
-![](/blurb/img/t1d/dd_iv3_mobile.png)
+![](/blurb/img/t1d/dd_iv3_mobile.png#center)
 
 There is however, an issue with how frequently the widgets update. Because of Apple's [limitations](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date), the widgets aren't always updated in realtime. Instead, they are allocated a certain budget and can only update within that constraint.
 

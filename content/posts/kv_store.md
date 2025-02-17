@@ -3,6 +3,7 @@ title: "Writing a Key-Value Store From Scratch"
 date: 2023-08-23
 author: "agao"
 ShowToc: true
+tags: ["database"]
 ---
 
 A few months ago I was inspired by [this post](https://artem.krylysov.com/blog/2023/04/19/how-rocksdb-works/) on how RocksDB works, and decided that it would be a fun exercise to implement a database myself.
@@ -17,7 +18,7 @@ For our implementation, we'll be using a log structured merge tree (or LSM tree)
 
 The memtables are kept in the first layer of the tree, and sorted in chronological order. Similarly, the SSTables are divided into different layers from newest to oldest.
 
-![LSM Tree](/blurb/img/kv_store/lsm_tree.png)
+![](/blurb/img/kv_store/lsm_tree.png#center)
 
 This setup allows us to write sequentially to memory (which is very fast) by writing to the latest memtable, and appending new ones as they fill up. We can then persist from memory to disk in the background in batches, which is more performant.
 

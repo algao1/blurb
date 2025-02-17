@@ -3,6 +3,7 @@ title: "KV Store Performance Improvements"
 date: 2025-01-20
 author: "agao"
 ShowToc: true
+tags: ["database", "profiling"]
 ---
 
 ## Background
@@ -63,7 +64,7 @@ reading 250,000 entries:                3.340343153s
 
 With profiling enabled, we can see this weird pattern in the CPU profile when we flush memtables to disk as SSTables (`LSMTree.FlushMemory` on the left):
 
-![profile](/blurb/img/kv_store/profile1.png)
+![](/blurb/img/kv_store/profile1.png#center)
 
 The most suspicious parts were the `file.Write` and `syscall.Write` stack frames on the top of the flamegraph to the left. And after looking around for a bit, I realized that was because the writer I was using wasn't buffering writes, and was directly writing to file (and thus performing a syscall) each time an entry was written. Yikes.
 
@@ -89,7 +90,7 @@ Nevertheless, onto the next flamegraph!
 
 ## Optimization 2: Sync Pool
 
-![profile](/blurb/img/kv_store/profile2.png)
+![](/blurb/img/kv_store/profile2.png#center)
 
 The next hotspot in the code seems to be coming from our reads, and in particular the `lsm.readChunk` function. This is called to read a segment (chunk) of entries from the data file, so we can iterate over it. There's quite a few `runtime.makeslice` calls which allocate memory (and is expensive), which tells me it's likely coming from something like `b := make([]byte, size)`.
 
@@ -145,7 +146,7 @@ Let's see if we can squeeze a little more performance out of this.
 
 ## Optimization 3: Shift Entry Layout
 
-![profile](/blurb/img/kv_store/profile3.png)
+![](/blurb/img/kv_store/profile3.png#center)
 
 The DB also seems to be spending a significant amount of time checking whether an entry exists against the bloom filter.
 But before tackling that, there's an easy optimization (slightly faster reads) we can do by rearranging the layout of each entry.

@@ -3,6 +3,7 @@ title: "Taming Randomness With Hello World"
 date: 2024-07-05
 author: "agao"
 ShowToc: true
+tags: ["simulation testing"]
 ---
 
 _2024/11/17: Updated to include support for mutexes._
@@ -17,7 +18,7 @@ To control randomness, we will need to simulate all randomness in the system wit
 
 The source code can be found [**here**](https://github.com/algao1/crumbs/tree/master/dst).
 
-![](/blurb/img/dst/dst_simulator.png)
+![](/blurb/img/dst/dst_simulator.png#center)
 
 ## Overview
 

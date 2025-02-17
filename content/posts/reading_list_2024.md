@@ -2,6 +2,7 @@
 title: "A Year of Reading (2024)"
 date: 2024-12-30
 author: "agao"
+tags: ["reading list"]
 ---
 
 I thought it'd be fun to revisit some of the best books and blogs I read this year.

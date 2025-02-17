@@ -3,6 +3,7 @@ title: "Writing a Crappy SQL Database from Scratch"
 date: 2024-11-10
 author: "agao"
 ShowToc: true
+tags: ["database", "sql"]
 ---
 
 Surprisingly, I've never had to write much SQL (i.e. any) in any of my previous jobs or current job before. So I thought it would be fun to get my hands dirty and try implementing a subset of SQL with an in-memory backend. It mostly follows from [this blog post](https://notes.eatonphil.com/database-basics.html).
